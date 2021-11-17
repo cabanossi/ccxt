@@ -4,7 +4,6 @@
 
 const Exchange = require ('./base/Exchange');
 const { ExchangeError, ArgumentsRequired, OrderNotFound } = require ('./base/errors');
-const Precise = require ('./base/Precise');
 
 //  ---------------------------------------------------------------------------
 
@@ -256,15 +255,12 @@ module.exports = class bitflyer extends Exchange {
         const timestamp = this.parse8601 (this.safeString (trade, 'exec_date'));
         const priceString = this.safeString (trade, 'price');
         const amountString = this.safeString (trade, 'size');
-        const price = this.parseNumber (priceString);
-        const amount = this.parseNumber (amountString);
-        const cost = this.parseNumber (Precise.stringMul (priceString, amountString));
         const id = this.safeString (trade, 'id');
         let symbol = undefined;
         if (market !== undefined) {
             symbol = market['symbol'];
         }
-        return {
+        return this.safeTrade ({
             'id': id,
             'info': trade,
             'timestamp': timestamp,
@@ -274,11 +270,11 @@ module.exports = class bitflyer extends Exchange {
             'type': undefined,
             'side': side,
             'takerOrMaker': undefined,
-            'price': price,
-            'amount': amount,
-            'cost': cost,
+            'price': priceString,
+            'amount': amountString,
+            'cost': undefined,
             'fee': undefined,
-        };
+        }, market);
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
@@ -334,10 +330,10 @@ module.exports = class bitflyer extends Exchange {
 
     parseOrder (order, market = undefined) {
         const timestamp = this.parse8601 (this.safeString (order, 'child_order_date'));
-        const amount = this.safeNumber (order, 'size');
-        const remaining = this.safeNumber (order, 'outstanding_size');
-        const filled = this.safeNumber (order, 'executed_size');
-        const price = this.safeNumber (order, 'price');
+        const price = this.safeString (order, 'price');
+        const amount = this.safeString (order, 'size');
+        const filled = this.safeString (order, 'executed_size');
+        const remaining = this.safeString (order, 'outstanding_size');
         const status = this.parseOrderStatus (this.safeString (order, 'child_order_state'));
         const type = this.safeStringLower (order, 'child_order_type');
         const side = this.safeStringLower (order, 'side');
@@ -353,7 +349,7 @@ module.exports = class bitflyer extends Exchange {
             };
         }
         const id = this.safeString (order, 'child_order_acceptance_id');
-        return this.safeOrder ({
+        return this.safeOrder2 ({
             'id': id,
             'clientOrderId': undefined,
             'info': order,
@@ -375,7 +371,7 @@ module.exports = class bitflyer extends Exchange {
             'fee': fee,
             'average': undefined,
             'trades': undefined,
-        });
+        }, market);
     }
 
     async fetchOrders (symbol = undefined, since = undefined, limit = 100, params = {}) {

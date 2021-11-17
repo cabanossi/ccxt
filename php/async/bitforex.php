@@ -7,7 +7,6 @@ namespace ccxt\async;
 
 use Exception; // a common import
 use \ccxt\ExchangeError;
-use \ccxt\Precise;
 
 class bitforex extends Exchange {
 
@@ -95,11 +94,13 @@ class bitforex extends Exchange {
                 ),
             ),
             'commonCurrencies' => array(
+                'BKC' => 'Bank Coin',
                 'CAPP' => 'Crypto Application Token',
                 'CREDIT' => 'TerraCredit',
                 'CTC' => 'Culture Ticket Chain',
                 'IQ' => 'IQ.Cash',
                 'MIR' => 'MIR COIN',
+                'NOIA' => 'METANOIA',
                 'TON' => 'To The Moon',
             ),
             'exceptions' => array(
@@ -156,6 +157,8 @@ class bitforex extends Exchange {
                 'quote' => $quote,
                 'baseId' => $baseId,
                 'quoteId' => $quoteId,
+                'type' => 'spot',
+                'spot' => true,
                 'active' => $active,
                 'precision' => $precision,
                 'limits' => $limits,
@@ -175,12 +178,9 @@ class bitforex extends Exchange {
         $orderId = null;
         $priceString = $this->safe_string($trade, 'price');
         $amountString = $this->safe_string($trade, 'amount');
-        $price = $this->parse_number($priceString);
-        $amount = $this->parse_number($amountString);
-        $cost = $this->parse_number(Precise::string_mul($priceString, $amountString));
         $sideId = $this->safe_integer($trade, 'direction');
         $side = $this->parse_side($sideId);
-        return array(
+        return $this->safe_trade(array(
             'info' => $trade,
             'id' => $id,
             'timestamp' => $timestamp,
@@ -188,13 +188,13 @@ class bitforex extends Exchange {
             'symbol' => $symbol,
             'type' => null,
             'side' => $side,
-            'price' => $price,
-            'amount' => $amount,
-            'cost' => $cost,
+            'price' => $priceString,
+            'amount' => $amountString,
+            'cost' => null,
             'order' => $orderId,
             'fee' => null,
             'takerOrMaker' => null,
-        );
+        ), $market);
     }
 
     public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
@@ -353,10 +353,10 @@ class bitforex extends Exchange {
         $sideId = $this->safe_integer($order, 'tradeType');
         $side = $this->parse_side($sideId);
         $type = null;
-        $price = $this->safe_number($order, 'orderPrice');
-        $average = $this->safe_number($order, 'avgPrice');
-        $amount = $this->safe_number($order, 'orderAmount');
-        $filled = $this->safe_number($order, 'dealAmount');
+        $price = $this->safe_string($order, 'orderPrice');
+        $average = $this->safe_string($order, 'avgPrice');
+        $amount = $this->safe_string($order, 'orderAmount');
+        $filled = $this->safe_string($order, 'dealAmount');
         $status = $this->parse_order_status($this->safe_string($order, 'orderState'));
         $feeSide = ($side === 'buy') ? 'base' : 'quote';
         $feeCurrency = $market[$feeSide];
@@ -364,7 +364,7 @@ class bitforex extends Exchange {
             'cost' => $this->safe_number($order, 'tradeFee'),
             'currency' => $feeCurrency,
         );
-        return $this->safe_order(array(
+        return $this->safe_order2(array(
             'info' => $order,
             'id' => $id,
             'clientOrderId' => null,
@@ -386,7 +386,7 @@ class bitforex extends Exchange {
             'status' => $status,
             'fee' => $fee,
             'trades' => null,
-        ));
+        ), $market);
     }
 
     public function fetch_order($id, $symbol = null, $params = array ()) {

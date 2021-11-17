@@ -10,6 +10,7 @@ use \ccxt\ExchangeError;
 use \ccxt\AuthenticationError;
 use \ccxt\ArgumentsRequired;
 use \ccxt\NotSupported;
+use \ccxt\Precise;
 
 class bitstamp extends Exchange {
 
@@ -182,6 +183,18 @@ class bitstamp extends Exchange {
                         'axs_address/',
                         'sand_withdrawal/',
                         'sand_address/',
+                        'hbar_withdrawal/',
+                        'hbar_address/',
+                        'rgt_withdrawal/',
+                        'rgt_address/',
+                        'fet_withdrawal/',
+                        'fet_address/',
+                        'skl_withdrawal/',
+                        'skl_address/',
+                        'cel_withdrawal/',
+                        'cel_address/',
+                        'sxp_withdrawal/',
+                        'sxp_address/',
                         'transfer-to-main/',
                         'transfer-from-main/',
                         'withdrawal-requests/',
@@ -191,6 +204,7 @@ class bitstamp extends Exchange {
                         'liquidation_address/new/',
                         'liquidation_address/info/',
                         'btc_unconfirmed/',
+                        'websockets_token/',
                     ),
                 ),
             ),
@@ -321,6 +335,8 @@ class bitstamp extends Exchange {
                 'quoteId' => $quoteId,
                 'symbolId' => $symbolId,
                 'info' => $market,
+                'type' => 'spot',
+                'spot' => true,
                 'active' => $active,
                 'precision' => $precision,
                 'limits' => array(
@@ -697,7 +713,9 @@ class bitstamp extends Exchange {
 
     public function parse_trading_fee($balances, $symbol) {
         $market = $this->market($symbol);
-        $tradeFee = $this->safe_number($balances, $market['id'] . '_fee');
+        $feeString = $this->safe_string($balances, $market['id'] . '_fee');
+        $dividedFeeString = Precise::string_div($feeString, '100');
+        $tradeFee = $this->parse_number($dividedFeeString);
         return array(
             'symbol' => $symbol,
             'maker' => $tradeFee,
@@ -1500,6 +1518,7 @@ class bitstamp extends Exchange {
             'currency' => $code,
             'address' => $address,
             'tag' => $tag,
+            'network' => null,
             'info' => $response,
         );
     }
@@ -1521,7 +1540,7 @@ class bitstamp extends Exchange {
                 if ($tag !== null) {
                     $request['destination_tag'] = $tag;
                 }
-            } else if ($code === 'XLM') {
+            } else if ($code === 'XLM' || $code === 'HBAR') {
                 if ($tag !== null) {
                     $request['memo_id'] = $tag;
                 }

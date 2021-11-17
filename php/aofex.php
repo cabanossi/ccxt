@@ -138,7 +138,10 @@ class aofex extends Exchange {
                 ),
             ),
             'commonCurrencies' => array(
+                'AQT' => 'AOFEX AQT',
                 'CPC' => 'Consensus Planet Coin',
+                'HERO' => 'Step Hero', // conflict with Metahero
+                'XBT' => 'XBT', // conflict with BTC
             ),
         ));
     }
@@ -210,6 +213,8 @@ class aofex extends Exchange {
                 'quoteId' => $quoteId,
                 'base' => $base,
                 'quote' => $quote,
+                'type' => 'spot',
+                'spot' => true,
                 'active' => null,
                 'maker' => $makerFee,
                 'taker' => $takerFee,
@@ -231,7 +236,7 @@ class aofex extends Exchange {
                         'max' => null,
                     ),
                 ),
-                'info' => $market,
+                'info' => array_merge($market, $precision),
             );
         }
         return $result;
@@ -522,8 +527,8 @@ class aofex extends Exchange {
         //
         //     {
         //         $id => 1584948803298490,
-        //         $amount => "2.737",
-        //         $price => "0.021209",
+        //         amount => "2.737",
+        //         price => "0.021209",
         //         direction => "sell",
         //         ts => 1584948803
         //     }
@@ -533,7 +538,7 @@ class aofex extends Exchange {
         //     {
         //         "$id":null,
         //         "$ctime":"2020-03-23 20:07:17",
-        //         "$price":"123.9",
+        //         "price":"123.9",
         //         "number":"0.010688626311541565",
         //         "total_price":"1.324320799999999903",
         //         "$fee":"0.000021377252623083"
@@ -549,15 +554,10 @@ class aofex extends Exchange {
         $side = $this->safe_string($trade, 'direction');
         $priceString = $this->safe_string($trade, 'price');
         $amountString = $this->safe_string_2($trade, 'amount', 'number');
-        $price = $this->parse_number($priceString);
-        $amount = $this->parse_number($amountString);
-        $cost = $this->safe_number($trade, 'total_price');
-        if ($cost === null) {
-            $cost = $this->parse_number(Precise::string_mul($priceString, $amountString));
-        }
-        $feeCost = $this->safe_number($trade, 'fee');
+        $costString = $this->safe_string($trade, 'total_price');
+        $feeCostString = $this->safe_string($trade, 'fee');
         $fee = null;
-        if ($feeCost !== null) {
+        if ($feeCostString !== null) {
             $feeCurrencyCode = null;
             if ($market !== null) {
                 if ($side === 'buy') {
@@ -567,11 +567,11 @@ class aofex extends Exchange {
                 }
             }
             $fee = array(
-                'cost' => $feeCost,
+                'cost' => $feeCostString,
                 'currency' => $feeCurrencyCode,
             );
         }
-        return array(
+        return $this->safe_trade(array(
             'id' => $id,
             'info' => $trade,
             'timestamp' => $timestamp,
@@ -581,11 +581,11 @@ class aofex extends Exchange {
             'type' => null,
             'side' => $side,
             'takerOrMaker' => null,
-            'price' => $price,
-            'amount' => $amount,
-            'cost' => $cost,
+            'price' => $priceString,
+            'amount' => $amountString,
+            'cost' => $costString,
             'fee' => $fee,
-        );
+        ), $market);
     }
 
     public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
@@ -674,8 +674,8 @@ class aofex extends Exchange {
         //         deal_number => '0.080718626311541565',
         //         deal_price => '123.890000000000000000',
         //         $status => 3,
-        //         // the $trades field is injected by fetchOrder
-        //         $trades => array(
+        //         // the trades field is injected by fetchOrder
+        //         trades => array(
         //             {
         //                 $id => null,
         //                 ctime => '2020-03-23 20:07:17',
@@ -701,43 +701,30 @@ class aofex extends Exchange {
         $side = $this->safe_string($order, 'side');
         // $amount = $this->safe_number($order, 'number');
         // $price = $this->safe_number($order, 'price');
-        $cost = null;
         $price = null;
         $amount = null;
         $average = null;
-        $number = $this->safe_number($order, 'number');
-        $totalPrice = $this->safe_number($order, 'total_price');
+        $number = $this->safe_string($order, 'number');
+        // total_price is just the $price times the $amount
+        // but it doesn't tell us anything about the $filled $price
         if ($type === 'limit') {
             $amount = $number;
-            $price = $this->safe_number($order, 'price');
+            $price = $this->safe_string($order, 'price');
         } else {
-            $average = $this->safe_number($order, 'deal_price');
+            $average = $this->safe_string($order, 'deal_price');
             if ($side === 'buy') {
-                $amount = $this->safe_number($order, 'deal_number');
+                $amount = $this->safe_string($order, 'deal_number');
             } else {
                 $amount = $number;
             }
         }
         // all orders except new orders and canceled orders
         $rawTrades = $this->safe_value($order, 'trades', array());
-        for ($i = 0; $i < count($rawTrades); $i++) {
-            $rawTrades[$i]['direction'] = $side;
-        }
-        $trades = $this->parse_trades($rawTrades, $market, null, null, array(
-            'symbol' => $market['symbol'],
-            'order' => $id,
-            'type' => $type,
-        ));
-        if ($type === 'limit') {
-            $cost = $totalPrice;
-        } else if ($side === 'buy') {
-            $cost = $number;
-        }
         $filled = null;
         if (($type === 'limit') && ($orderStatus === '3')) {
             $filled = $amount;
         }
-        return $this->safe_order(array(
+        return $this->safe_order2(array(
             'info' => $order,
             'id' => $id,
             'clientOrderId' => null,
@@ -752,14 +739,14 @@ class aofex extends Exchange {
             'side' => $side,
             'price' => $price,
             'stopPrice' => null,
-            'cost' => $cost,
+            'cost' => null,
             'average' => $average,
             'amount' => $amount,
             'filled' => $filled,
             'remaining' => null,
-            'trades' => $trades,
+            'trades' => $rawTrades,
             'fee' => null,
-        ));
+        ), $market);
     }
 
     public function fetch_closed_order($id, $symbol = null, $params = array ()) {
@@ -879,7 +866,7 @@ class aofex extends Exchange {
                     if ($price !== null) {
                         $cost = $amount * $price;
                     } else {
-                        throw new InvalidOrder($this->id . " createOrder() requires the $price argument with $market buy orders to calculate total $order $cost ($amount to spend), where $cost = $amount * $price-> Supply a $price argument to createOrder() call if you want the $cost to be calculated for you from $price and $amount, or, alternatively, add .options['createMarketBuyOrderRequiresPrice'] = false and supply the total $cost value in the 'amount' argument");
+                        throw new InvalidOrder($this->id . " createOrder() requires the $price argument with $market buy orders to calculate total order $cost ($amount to spend), where $cost = $amount * $price-> Supply a $price argument to createOrder() call if you want the $cost to be calculated for you from $price and $amount, or, alternatively, add .options['createMarketBuyOrderRequiresPrice'] = false and supply the total $cost value in the 'amount' argument");
                     }
                 }
                 $precision = $market['precision']['price'];
@@ -897,16 +884,7 @@ class aofex extends Exchange {
         //     }
         //
         $result = $this->safe_value($response, 'result', array());
-        $order = $this->parse_order($result, $market);
-        $timestamp = $this->milliseconds();
-        return array_merge($order, array(
-            'timestamp' => $timestamp,
-            'datetime' => $this->iso8601($timestamp),
-            'amount' => $amount,
-            'price' => $price,
-            'type' => $type,
-            'side' => $side,
-        ));
+        return $this->parse_order($result, $market);
     }
 
     public function cancel_order($id, $symbol = null, $params = array ()) {

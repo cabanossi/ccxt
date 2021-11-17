@@ -20,7 +20,7 @@ class bibox extends Exchange {
             'name' => 'Bibox',
             'countries' => array( 'CN', 'US', 'KR' ),
             'version' => 'v1',
-            'hostname' => 'bibox365.com',
+            'hostname' => 'bibox.com',
             'has' => array(
                 'cancelOrder' => true,
                 'CORS' => null,
@@ -357,18 +357,15 @@ class bibox extends Exchange {
         $feeRate = null; // todo => deduce from $market if $market is defined
         $priceString = $this->safe_string($trade, 'price');
         $amountString = $this->safe_string($trade, 'amount');
-        $price = $this->parse_number($priceString);
-        $amount = $this->parse_number($amountString);
-        $cost = $this->parse_number(Precise::string_mul($priceString, $amountString));
         if ($feeCostString !== null) {
             $fee = array(
-                'cost' => $this->parse_number(Precise::string_neg($feeCostString)),
+                'cost' => Precise::string_neg($feeCostString),
                 'currency' => $feeCurrency,
                 'rate' => $feeRate,
             );
         }
         $id = $this->safe_string($trade, 'id');
-        return array(
+        return $this->safe_trade(array(
             'info' => $trade,
             'id' => $id,
             'order' => null, // Bibox does not have it (documented) yet
@@ -378,11 +375,11 @@ class bibox extends Exchange {
             'type' => 'limit',
             'takerOrMaker' => null,
             'side' => $side,
-            'price' => $price,
-            'amount' => $amount,
-            'cost' => $cost,
+            'price' => $priceString,
+            'amount' => $amountString,
+            'cost' => null,
             'fee' => $fee,
-        );
+        ), $market);
     }
 
     public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
@@ -983,11 +980,11 @@ class bibox extends Exchange {
         $rawType = $this->safe_string($order, 'order_type');
         $type = ($rawType === '1') ? 'market' : 'limit';
         $timestamp = $this->safe_integer($order, 'createdAt');
-        $price = $this->safe_number($order, 'price');
-        $average = $this->safe_number($order, 'deal_price');
-        $filled = $this->safe_number($order, 'deal_amount');
-        $amount = $this->safe_number($order, 'amount');
-        $cost = $this->safe_number_2($order, 'deal_money', 'money');
+        $price = $this->safe_string($order, 'price');
+        $average = $this->safe_string($order, 'deal_price');
+        $filled = $this->safe_string($order, 'deal_amount');
+        $amount = $this->safe_string($order, 'amount');
+        $cost = $this->safe_string_2($order, 'deal_money', 'money');
         $rawSide = $this->safe_string($order, 'order_side');
         $side = ($rawSide === '1') ? 'buy' : 'sell';
         $status = $this->parse_order_status($this->safe_string($order, 'status'));
@@ -1000,7 +997,7 @@ class bibox extends Exchange {
                 'currency' => null,
             );
         }
-        return $this->safe_order(array(
+        return $this->safe_order2(array(
             'info' => $order,
             'id' => $id,
             'clientOrderId' => null,
@@ -1022,7 +1019,7 @@ class bibox extends Exchange {
             'status' => $status,
             'fee' => $fee,
             'trades' => null,
-        ));
+        ), $market);
     }
 
     public function parse_order_status($status) {
@@ -1246,6 +1243,7 @@ class bibox extends Exchange {
             'currency' => $code,
             'address' => $address,
             'tag' => $tag,
+            'network' => null,
             'info' => $response,
         );
     }

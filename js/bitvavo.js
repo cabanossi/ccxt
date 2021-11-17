@@ -303,6 +303,8 @@ module.exports = class bitvavo extends Exchange {
                 'baseId': baseId,
                 'quoteId': quoteId,
                 'info': market,
+                'type': 'spot',
+                'spot': true,
                 'active': active,
                 'precision': precision,
                 'limits': {
@@ -761,6 +763,7 @@ module.exports = class bitvavo extends Exchange {
             'currency': code,
             'address': address,
             'tag': tag,
+            'network': undefined,
             'info': response,
         };
     }
@@ -1149,7 +1152,8 @@ module.exports = class bitvavo extends Exchange {
         const id = this.safeString (order, 'orderId');
         const timestamp = this.safeInteger (order, 'created');
         const marketId = this.safeString (order, 'market');
-        const symbol = this.safeSymbol (marketId, market, '-');
+        market = this.safeMarket (marketId, market, '-');
+        const symbol = market['symbol'];
         const status = this.parseOrderStatus (this.safeString (order, 'status'));
         const side = this.safeString (order, 'side');
         const type = this.safeString (order, 'orderType');
@@ -1195,7 +1199,7 @@ module.exports = class bitvavo extends Exchange {
             'status': status,
             'fee': fee,
             'trades': rawTrades,
-        });
+        }, market);
     }
 
     async fetchMyTrades (symbol = undefined, since = undefined, limit = undefined, params = {}) {

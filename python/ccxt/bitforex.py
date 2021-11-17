@@ -19,7 +19,6 @@ from ccxt.base.errors import InsufficientFunds
 from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
 from ccxt.base.errors import DDoSProtection
-from ccxt.base.precise import Precise
 
 
 class bitforex(Exchange):
@@ -108,11 +107,13 @@ class bitforex(Exchange):
                 },
             },
             'commonCurrencies': {
+                'BKC': 'Bank Coin',
                 'CAPP': 'Crypto Application Token',
                 'CREDIT': 'TerraCredit',
                 'CTC': 'Culture Ticket Chain',
                 'IQ': 'IQ.Cash',
                 'MIR': 'MIR COIN',
+                'NOIA': 'METANOIA',
                 'TON': 'To The Moon',
             },
             'exceptions': {
@@ -168,6 +169,8 @@ class bitforex(Exchange):
                 'quote': quote,
                 'baseId': baseId,
                 'quoteId': quoteId,
+                'type': 'spot',
+                'spot': True,
                 'active': active,
                 'precision': precision,
                 'limits': limits,
@@ -184,12 +187,9 @@ class bitforex(Exchange):
         orderId = None
         priceString = self.safe_string(trade, 'price')
         amountString = self.safe_string(trade, 'amount')
-        price = self.parse_number(priceString)
-        amount = self.parse_number(amountString)
-        cost = self.parse_number(Precise.string_mul(priceString, amountString))
         sideId = self.safe_integer(trade, 'direction')
         side = self.parse_side(sideId)
-        return {
+        return self.safe_trade({
             'info': trade,
             'id': id,
             'timestamp': timestamp,
@@ -197,13 +197,13 @@ class bitforex(Exchange):
             'symbol': symbol,
             'type': None,
             'side': side,
-            'price': price,
-            'amount': amount,
-            'cost': cost,
+            'price': priceString,
+            'amount': amountString,
+            'cost': None,
             'order': orderId,
             'fee': None,
             'takerOrMaker': None,
-        }
+        }, market)
 
     def fetch_trades(self, symbol, since=None, limit=None, params={}):
         self.load_markets()
@@ -348,10 +348,10 @@ class bitforex(Exchange):
         sideId = self.safe_integer(order, 'tradeType')
         side = self.parse_side(sideId)
         type = None
-        price = self.safe_number(order, 'orderPrice')
-        average = self.safe_number(order, 'avgPrice')
-        amount = self.safe_number(order, 'orderAmount')
-        filled = self.safe_number(order, 'dealAmount')
+        price = self.safe_string(order, 'orderPrice')
+        average = self.safe_string(order, 'avgPrice')
+        amount = self.safe_string(order, 'orderAmount')
+        filled = self.safe_string(order, 'dealAmount')
         status = self.parse_order_status(self.safe_string(order, 'orderState'))
         feeSide = 'base' if (side == 'buy') else 'quote'
         feeCurrency = market[feeSide]
@@ -359,7 +359,7 @@ class bitforex(Exchange):
             'cost': self.safe_number(order, 'tradeFee'),
             'currency': feeCurrency,
         }
-        return self.safe_order({
+        return self.safe_order2({
             'info': order,
             'id': id,
             'clientOrderId': None,
@@ -381,7 +381,7 @@ class bitforex(Exchange):
             'status': status,
             'fee': fee,
             'trades': None,
-        })
+        }, market)
 
     def fetch_order(self, id, symbol=None, params={}):
         self.load_markets()

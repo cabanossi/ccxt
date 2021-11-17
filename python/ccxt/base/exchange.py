@@ -4,7 +4,7 @@
 
 # -----------------------------------------------------------------------------
 
-__version__ = '1.57.74'
+__version__ = '1.61.40'
 
 # -----------------------------------------------------------------------------
 
@@ -300,6 +300,7 @@ class Exchange(object):
     substituteCommonCurrencyCodes = True
     quoteJsonNumbers = True
     number = float  # or str (a pointer to a class)
+    handleContentTypeApplicationZip = False
     # whether fees should be summed by currency code
     reduceFees = True
     lastRestRequestTimestamp = 0
@@ -329,6 +330,7 @@ class Exchange(object):
         'BCHABC': 'BCH',
         'BCHSV': 'BSV',
     }
+    synchronous = True
 
     def __init__(self, config={}):
 
@@ -391,7 +393,7 @@ class Exchange(object):
             'defaultCost': 1.0,
         }, getattr(self, 'tokenBucket', {}))
 
-        self.session = self.session if self.session or self.asyncio_loop else Session()
+        self.session = self.session if self.session or not self.synchronous else Session()
         self.logger = self.logger if self.logger else logging.getLogger(__name__)
 
     def __del__(self):
@@ -1054,9 +1056,18 @@ class Exchange(object):
         return utc_datetime.strftime('%m' + infix + '%d' + infix + '%Y')
 
     @staticmethod
-    def ymd(timestamp, infix='-'):
+    def ymd(timestamp, infix='-', fullYear=True):
+        year_format = '%Y' if fullYear else '%y'
         utc_datetime = datetime.datetime.utcfromtimestamp(int(round(timestamp / 1000)))
-        return utc_datetime.strftime('%Y' + infix + '%m' + infix + '%d')
+        return utc_datetime.strftime(year_format + infix + '%m' + infix + '%d')
+
+    @staticmethod
+    def yymmdd(timestamp, infix=''):
+        return Exchange.ymd(timestamp, infix, False)
+
+    @staticmethod
+    def yyyymmdd(timestamp, infix='-'):
+        return Exchange.ymd(timestamp, infix, True)
 
     @staticmethod
     def ymdhms(timestamp, infix=' '):
@@ -1368,7 +1379,7 @@ class Exchange(object):
         self.symbols = sorted(self.markets.keys())
         self.ids = sorted(self.markets_by_id.keys())
         if currencies:
-            self.currencies = self.deep_extend(currencies, self.currencies)
+            self.currencies = self.deep_extend(self.currencies, currencies)
         else:
             base_currencies = [{
                 'id': market['baseId'] if (('baseId' in market) and (market['baseId'] is not None)) else market['base'],
@@ -1395,7 +1406,7 @@ class Exchange(object):
             self.base_currencies = self.index_by(base_currencies, 'code')
             self.quote_currencies = self.index_by(quote_currencies, 'code')
             currencies = self.sort_by(base_currencies + quote_currencies, 'code')
-            self.currencies = self.deep_extend(self.index_by(currencies, 'code'), self.currencies)
+            self.currencies = self.deep_extend(self.currencies, self.index_by(currencies, 'code'))
         self.currencies_by_id = self.index_by(list(self.currencies.values()), 'id')
         self.codes = sorted(self.currencies.keys())
         return self.markets
@@ -1532,6 +1543,16 @@ class Exchange(object):
                 return deposit_address
         else:
             raise NotSupported(self.id + ' fetchDepositAddress not supported yet')
+
+    def parse_funding_rate(self, contract, market=None):
+        raise NotSupported(self.id + ' parse_funding_rate() not supported yet')
+
+    def parse_funding_rates(self, response, market=None):
+        result = {}
+        for entry in response:
+            parsed = self.parse_funding_rate(entry, market)
+            result[parsed['symbol']] = parsed
+        return result
 
     def parse_ohlcv(self, ohlcv, market=None):
         if isinstance(ohlcv, list):
@@ -1686,7 +1707,7 @@ class Exchange(object):
         result = []
         for i in range(0, len(ohlcvs[t])):
             result.append([
-                ohlcvs[t][i] if ms else (ohlcvs[t][i] * 1000),
+                ohlcvs[t][i] if ms else (int(ohlcvs[t][i]) * 1000),
                 ohlcvs[o][i],
                 ohlcvs[h][i],
                 ohlcvs[l][i],
@@ -1824,14 +1845,14 @@ class Exchange(object):
             result.append(self.extend(self.parse_ticker(values[i]), params))
         return self.filter_by_array(result, 'symbol', symbols)
 
-    def parse_deposit_addresses(self, addresses, codes=None):
+    def parse_deposit_addresses(self, addresses, codes=None, indexed=True, params={}):
         result = []
         for i in range(0, len(addresses)):
-            address = self.parse_deposit_address(addresses[i])
+            address = self.extend(self.parse_deposit_address(addresses[i]), params)
             result.append(address)
         if codes:
-            result = self.filter_by_array(result, 'currency', codes)
-        return self.index_by(result, 'currency')
+            result = self.filter_by_array(result, 'currency', codes, False)
+        return self.index_by(result, 'currency') if indexed else result
 
     def parse_trades(self, trades, market=None, since=None, limit=None, params={}):
         array = self.to_array(trades)
@@ -2234,6 +2255,48 @@ class Exchange(object):
                     }
         return list(reduced.values())
 
+    def safe_trade(self, trade, market=None):
+        amount = self.safe_string(trade, 'amount')
+        price = self.safe_string(trade, 'price')
+        cost = self.safe_string(trade, 'cost')
+        if cost is None:
+            cost = Precise.string_mul(price, amount)
+        parseFee = self.safe_value(trade, 'fee') is None
+        parseFees = self.safe_value(trade, 'fees') is None
+        shouldParseFees = parseFee or parseFees
+        fees = self.safe_value(trade, 'fees', [])
+        if shouldParseFees:
+            tradeFees = self.safe_value(trade, 'fees')
+            if tradeFees is not None:
+                for j in range(0, len(tradeFees)):
+                    tradeFee = tradeFees[j]
+                    fees.append(self.extend({}, tradeFee))
+            else:
+                tradeFee = self.safe_value(trade, 'fee')
+                if tradeFee is not None:
+                    fees.append(self.extend({}, tradeFee))
+        fee = self.safe_value(trade, 'fee')
+        if shouldParseFees:
+            reducedFees = self.reduce_fees_by_currency(fees, True) if self.reduceFees else fees
+            reducedLength = len(reducedFees)
+            for i in range(0, reducedLength):
+                reducedFees[i]['cost'] = self.parse_number(reducedFees[i]['cost'])
+            if not parseFee and (reducedLength == 0):
+                fee['cost'] = self.parse_number(self.safe_string(fee, 'cost'))
+                reducedFees.append(fee)
+            if parseFees:
+                trade['fees'] = reducedFees
+            if parseFee and (reducedLength == 1):
+                trade['fee'] = reducedFees[0]
+            tradeFee = self.safe_value(trade, 'fee')
+            if tradeFee is not None:
+                tradeFee['cost'] = self.parse_number(self.safe_string(tradeFee, 'cost'))
+                trade['fee'] = tradeFee
+        trade['amount'] = self.parse_number(amount)
+        trade['price'] = self.parse_number(price)
+        trade['cost'] = self.parse_number(cost)
+        return trade
+
     def safe_order(self, order):
         # Cost
         # Remaining
@@ -2332,7 +2395,7 @@ class Exchange(object):
             'remaining': remaining,
         })
 
-    def safe_order2(self, order, market):
+    def safe_order2(self, order, market=None):
         # parses numbers as strings
         # it is important pass the trades as unparsed rawTrades
         amount = self.omit_zero(self.safe_string(order, 'amount'))
@@ -2362,7 +2425,7 @@ class Exchange(object):
                 'order': order['id'],
             })
             self.number = oldNumber
-            if isinstance(trades, list):
+            if isinstance(trades, list) and len(trades):
                 if parseFilled:
                     filled = '0'
                 if parseCost:
@@ -2425,6 +2488,13 @@ class Exchange(object):
                 cost = Precise.string_mul(price, filled)
             else:
                 cost = Precise.string_mul(average, filled)
+            # contract trading )
+            contractSize = self.safe_string(market, 'contractSize')
+            if contractSize is not None:
+                inverse = self.safe_string(market, 'inverse', False)
+                if inverse:
+                    cost = Precise.string_div('1', cost, 8)
+                cost = Precise.string_mul(cost, contractSize)
         # support for market orders
         orderType = self.safe_value(order, 'type')
         emptyPrice = (price is None) or Precise.string_equals(price, '0')
@@ -2472,7 +2542,7 @@ class Exchange(object):
         return '1e' + Precise.string_neg(precision)
 
     def omit_zero(self, string_number):
-        if string_number is None:
+        if string_number is None or string_number == '':
             return None
         if float(string_number) == 0:
             return None
@@ -2484,4 +2554,15 @@ class Exchange(object):
             tag = None
         if tag is None:
             tag = self.safe_string(params, 'tag')
+            if tag is not None:
+                params = self.omit(params, 'tag')
         return [tag, params]
+
+    def get_supported_mapping(self, key, mapping={}):
+        # Takes a key and a dictionary, and returns the dictionary's value for that key
+        # :throws:
+        #      NotSupported if the dictionary does not contain the key
+        if (key in mapping):
+            return mapping[key]
+        else:
+            raise NotSupported(self.id + ' ' + key + ' does not have a value in mapping')

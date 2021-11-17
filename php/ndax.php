@@ -193,9 +193,9 @@ class ndax extends Exchange {
                 'secret' => true,
                 'uid' => true,
                 // these credentials are required for signIn() and withdraw()
-                // 'login' => true,
-                // 'password' => true,
-                // 'twofa' => true,
+                'login' => true,
+                'password' => true,
+                'twofa' => true,
             ),
             'precisionMode' => TICK_SIZE,
             'exceptions' => array(
@@ -393,6 +393,8 @@ class ndax extends Exchange {
                 'baseId' => $baseId,
                 'quoteId' => $quoteId,
                 'info' => $market,
+                'type' => 'spot',
+                'spot' => true,
                 'active' => $active,
                 'precision' => $precision,
                 'limits' => array(
@@ -1774,6 +1776,7 @@ class ndax extends Exchange {
             'currency' => $code,
             'address' => $address,
             'tag' => $tag,
+            'network' => null,
             'info' => $depositAddress,
         );
     }

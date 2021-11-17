@@ -199,6 +199,8 @@ class idex extends Exchange {
                 'quote' => $quote,
                 'baseId' => $baseId,
                 'quoteId' => $quoteId,
+                'type' => 'spot',
+                'spot' => true,
                 'active' => $active,
                 'info' => $entry,
                 'precision' => $precision,
@@ -935,7 +937,7 @@ class idex extends Exchange {
         );
         $priceString = null;
         $typeLower = strtolower($type);
-        $limitOrder = mb_strpos($typeLower, 'limit') > -1;
+        $limitOrder = mb_strpos($typeLower, 'limit') !== false;
         if (is_array($limitTypeEnums) && array_key_exists($type, $limitTypeEnums)) {
             $typeEnum = $limitTypeEnums[$type];
             $priceString = $this->price_to_precision($symbol, $price);
